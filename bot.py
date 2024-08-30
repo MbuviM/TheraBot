@@ -159,6 +159,6 @@ def generate_response(user_input):
     return response.choices[0].message.content
 
 # Example usage
-user_input = "I experienced GBV."
-response = generate_response(user_input)
-print(response)
+#user_input = "I experienced GBV."
+#response = generate_response(user_input)
+#print(response)
