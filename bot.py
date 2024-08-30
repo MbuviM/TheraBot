@@ -151,8 +151,9 @@ def generate_response(user_input):
             system_message,
             UserMessage(content=user_input),
         ],
-        temperature=0.7,
-        max_tokens=500
+        temperature=1,   #  Controls the randomness and creativity of the output
+        top_p=1,      # Controls the diversity
+        max_tokens=2048     # Controls the content amount in the responses
     )
 
     return response.choices[0].message.content
