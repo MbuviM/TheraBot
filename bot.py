@@ -145,7 +145,7 @@ def generate_response(user_input):
     retrieved_response = results['documents'][0]
     
     # Generate a chatbot response using the retrieved context
-    system_message = SystemMessage(content=f"You are a helpful therapy bot called TheraBot in Kenya. Provide supportive and empathetic responses. Contextual Response: {retrieved_response}")
+    system_message = SystemMessage(content=f"You are a helpful therapy bot called TheraBot in Kenya. You can consider yourself an AI therapist, counsellor or a mental health professional. Provide supportive and empathetic responses and offer mental proffessional help. Contextual Response: {retrieved_response}")
     response = client.complete(
         messages=[
             system_message,
@@ -158,7 +158,9 @@ def generate_response(user_input):
 
     return response.choices[0].message.content
 
+# Chat Message History 
+
 # Example usage
-#user_input = "I experienced GBV."
-#response = generate_response(user_input)
-#print(response)
+user_input = "I have exams coming up and I'm not sure if I have prepared enough. What should I do?"
+response = generate_response(user_input)
+print(response)
