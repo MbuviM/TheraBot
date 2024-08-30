@@ -28,8 +28,25 @@ client = ChatCompletionsClient(
     credential=AzureKeyCredential(os.getenv("AZURE_INFERENCE_CREDENTIAL")),
 )
 
-# Load dataset
-mental_health_data = load_dataset("Amod/mental_health_counseling_conversations")
+# Define the datasets to be used
+datasets = [
+    {"name": "mental_health_counseling", "path": "Amod/mental_health_counseling_conversations"},
+    {"name": "mental_health_chat", "path": "mpingale/mental-health-chat-dataset"},
+]
+
+# Function to load multiple datasets
+def load_multiple_datasets():
+    loaded_datasets = {}
+    for dataset_info in datasets:
+        try:
+            loaded_datasets[dataset_info['name']] = load_dataset(dataset_info['path'])
+            print(f"Successfully loaded dataset: {dataset_info['name']}")
+        except Exception as e:
+            print(f"Error loading dataset {dataset_info['name']}: {e}")
+    return loaded_datasets
+
+# Load the datasets
+mental_health_data = load_multiple_datasets()
 
 # Create a Chroma client
 chromaClient = chromadb.Client()
@@ -40,38 +57,46 @@ therabotCollection = chromaClient.create_collection(name="therabot")
 # Setting up the embedding model
 default_ef = embedding_functions.DefaultEmbeddingFunction()
 
-# Function to process and embed the dataset into ChromaDB
-def embed_and_store_data():
+def embed_and_store_data(dataset_name):
     try:
+        if dataset_name == 'mental_health_counseling':
+            column_context = 'Context'
+            column_response = 'Response'
+        elif dataset_name == 'mental_health_chat':
+            column_context = 'questionText'
+            column_response = 'answerText'
+        else:
+            raise ValueError(f"Unknown dataset: {dataset_name}")
+
         logger.info(f"Total examples: {len(mental_health_data['train'])}")
         for i, example in enumerate(mental_health_data['train']):
             logger.info(f"Processing example {i}")
-            
-            context = example['Context']
-            response = example['Response']
-            
+
+            context = example[column_context]
+            response = example[column_response]
+
             logger.info(f"Context: {context[:50]}...")
             logger.info(f"Response: {response[:50]}...")
-            
-            context_embedding = default_ef([context])
-            response_embedding = default_ef([response])
-            
-            logger.info(f"Embeddings created. Shapes: {len(context_embedding)}, {len(response_embedding)}")
-            
+
+            context_embedding = default_ef.embed([context])
+            response_embedding = default_ef.embed([response])
+
+            logger.info(f"Embeddings created. Shapes: {len(context_embedding[0])}, {len(response_embedding[0])}")
+
             try:
                 therabotCollection.add(
                     documents=[context],
-                    embeddings=context_embedding,
+                    embeddings=[context_embedding[0]],
                     ids=[str(uuid.uuid4())]
                 )
                 therabotCollection.add(
                     documents=[response],
-                    embeddings=response_embedding,
+                    embeddings=[response_embedding[0]],
                     ids=[str(uuid.uuid4())]
                 )
             except Exception as e:
                 logger.error(f"Error adding to collection: {e}")
-                
+
     except Exception as e:
         logger.error(f"An error occurred: {e}")
 
@@ -120,19 +145,19 @@ def generate_response(user_input):
     retrieved_response = results['documents'][0]
     
     # Generate a chatbot response using the retrieved context
-    system_message = SystemMessage(content=f"Contextual Response: {retrieved_response}")
+    system_message = SystemMessage(content=f"You are a helpful therapy bot called TheraBot in Kenya. Provide supportive and empathetic responses. Contextual Response: {retrieved_response}")
     response = client.complete(
         messages=[
             system_message,
             UserMessage(content=user_input),
         ],
         temperature=0.7,
-        max_tokens=150
+        max_tokens=500
     )
 
     return response.choices[0].message.content
 
 # Example usage
-user_input = "I'm feeling anxious right now."
+user_input = "I experienced GBV."
 response = generate_response(user_input)
 print(response)
