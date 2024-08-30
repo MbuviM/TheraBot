@@ -9,6 +9,12 @@ import chromadb
 from chromadb.utils import embedding_functions 
 from chromadb.config import Settings
 import uuid
+import logging 
+
+# Set up logging to help track execution
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 #Create load dotenv instance
 load_dotenv()
@@ -33,30 +39,38 @@ default_ef = embedding_functions.DefaultEmbeddingFunction()
 
 # Function to process and embed the dataset into ChromaDB
 def embed_and_store_data():
-    for example in mental_health_data['train']:
-        # Assuming 'context' and 'response' are the relevant fields to embed
-        context = example['Context']
-        response = example['Response']
-        
-        # Embed the context and response
-        context_embedding = default_ef([context])
-        response_embedding = default_ef([response])
-        
-        # Store the embeddings in ChromaDB
-        therabotCollection.add(
-            documents=[context], 
-            embeddings=context_embedding,
-            ids=[str(uuid.uuid4())]
-        )
-        
-        therabotCollection.add(
-            documents=[response], 
-            embeddings=response_embedding,
-            ids=[str(uuid.uuid4())]
-        )
-
-# Embed and store the dataset
-embed_and_store_data()
+    try:
+        logger.info(f"Total examples: {len(mental_health_data['train'])}")
+        for i, example in enumerate(mental_health_data['train']):
+            logger.info(f"Processing example {i}")
+            
+            context = example['Context']
+            response = example['Response']
+            
+            logger.info(f"Context: {context[:50]}...")
+            logger.info(f"Response: {response[:50]}...")
+            
+            context_embedding = default_ef([context])
+            response_embedding = default_ef([response])
+            
+            logger.info(f"Embeddings created. Shapes: {len(context_embedding)}, {len(response_embedding)}")
+            
+            try:
+                therabotCollection.add(
+                    documents=[context],
+                    embeddings=context_embedding,
+                    ids=[str(uuid.uuid4())]
+                )
+                therabotCollection.add(
+                    documents=[response],
+                    embeddings=response_embedding,
+                    ids=[str(uuid.uuid4())]
+                )
+            except Exception as e:
+                logger.error(f"Error adding to collection: {e}")
+                
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
 
 # Define predefined scripts for specific scenarios
 scripts = {
@@ -76,8 +90,8 @@ scripts = {
 # Function to detect if a script should be used based on a user's response
 def use_script(user_input):
     # Check for trigger words
-    for trigger, script_lines in scripts.items:
-        if trigger in input.lower():
+    for trigger, script_lines in scripts.items():
+        if trigger in user_input.lower():
             return script_lines
     return None
 
@@ -91,7 +105,7 @@ def generate_response(user_input):
         return "\n".join(script_response)
     
     else:
-        question_embedding = default_ef.embed_with_retries([user_input])
+        question_embedding = default_ef([user_input])
 
      # Query the ChromaDB for the most relevant response
     results = therabotCollection.query(
@@ -113,8 +127,7 @@ def generate_response(user_input):
         max_tokens=150
     )
 
-    # Combine and return the chatbot's response
-    return "".join(chunk.content for chunk in response)
+    return response.choices[0].message.content
 
 # Example usage
 user_input = "I'm feeling anxious right now."
