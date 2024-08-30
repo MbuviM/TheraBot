@@ -11,8 +11,11 @@ from chromadb.config import Settings
 import uuid
 import logging 
 
+# Disable Azure SDK logging
+logging.getLogger('azure').setLevel(logging.WARNING)
+
 # Set up logging to help track execution
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
