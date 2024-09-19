@@ -10,6 +10,7 @@ from chromadb.utils import embedding_functions
 from chromadb.config import Settings
 import uuid
 import logging 
+import mysql.connector
 
 # Disable Azure SDK logging
 logging.getLogger('azure').setLevel(logging.WARNING)
@@ -115,6 +116,33 @@ scripts = {
 
 }
 
+# Set up MySQL connection for storing conversation history and user profiles
+db = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="password",
+    database="chatbot_db"
+)
+cursor = db.cursor()
+
+# Function to save conversation history
+def save_conversation(user_id, message, response):
+    query = "INSERT INTO conversations (user_id, message, response) VALUES (%s, %s, %s)"
+    cursor.execute(query, (user_id, message, response))
+    db.commit()
+
+# Function to retrieve conversation history
+def get_conversation_history(user_id):
+    query = "SELECT message, response FROM conversations WHERE user_id = %s ORDER BY timestamp"
+    cursor.execute(query, (user_id,))
+    return cursor.fetchall()
+
+# Function to fetch user profile for personalized responses
+def get_user_profile(user_id):
+    query = "SELECT name, preferences FROM user_profiles WHERE user_id = %s"
+    cursor.execute(query, (user_id,))
+    return cursor.fetchone()
+
 # Function to detect if a script should be used based on a user's response
 def use_script(user_input):
     # Check for trigger words
@@ -123,44 +151,57 @@ def use_script(user_input):
             return script_lines
     return None
 
-# Function to generate response based on scripts, chroma retrieval and user input
-def generate_response(user_input):
+# Function to generate response based on scripts, chroma retrieval, and user input
+def generate_response(user_input, user_id):
+    # Retrieve user profile for personalization
+    profile = get_user_profile(user_id)
+    user_name = profile[0] if profile else "there"
+    preferences = profile[1] if profile else ""
+
+    # Personalized greeting
+    personalized_greeting = f"Hi {user_name}, I remember you mentioned {preferences}. How are you today?"
+
+    # Retrieve past conversation history
+    history = get_conversation_history(user_id)
+    history_str = "\n".join([f"User: {msg} \nTheraBot: {resp}" for msg, resp in history])
+
     # Check if a script is needed
     script_response = use_script(user_input)
 
     if script_response is not None:
         # If a script is found, return the script as the response
-        return "\n".join(script_response)
+        return personalized_greeting + "\n" + "\n".join(script_response)
     
     else:
-        question_embedding = default_ef([user_input])
+        question_embedding = default_ef.embed([user_input])
 
-     # Query the ChromaDB for the most relevant response
-    results = therabotCollection.query(
-        query_embeddings=question_embedding,
-        n_results=1
-    )
-    
-    # Get the response linked to the most similar context
-    retrieved_response = results['documents'][0]
-    
-    # Generate a chatbot response using the retrieved context
-    system_message = SystemMessage(content=f"You are a helpful therapy bot called TheraBot in Kenya. You can consider yourself an AI therapist, counsellor or a mental health professional. Provide supportive and empathetic responses and offer mental proffessional help. Contextual Response: {retrieved_response}")
-    response = client.complete(
-        messages=[
-            system_message,
-            UserMessage(content=user_input),
-        ],
-        temperature=1,   #  Controls the randomness and creativity of the output
-        top_p=1,      # Controls the diversity
-        max_tokens=2048     # Controls the content amount in the responses
-    )
+        # Query the ChromaDB for the most relevant response
+        results = therabotCollection.query(
+            query_embeddings=question_embedding,
+            n_results=1
+        )
+        
+        # Get the response linked to the most similar context
+        retrieved_response = results['documents'][0]
+        
+        # Generate a chatbot response using the retrieved context
+        system_message = SystemMessage(content=f"Previous history: {history_str}. Contextual Response: {retrieved_response}")
+        response = client.complete(
+            messages=[
+                system_message,
+                UserMessage(content=user_input),
+            ],
+            temperature=1,  # Controls randomness/creativity
+            top_p=1,  # Controls diversity
+            max_tokens=2048  # Controls length of response
+        )
 
-    return response.choices[0].message.content
+        # Save the conversation history
+        save_conversation(user_id, user_input, response.choices[0].message.content)
 
-# Chat Message History 
+        return personalized_greeting + "\n" + response.choices[0].message.content
 
 # Example usage
-user_input = "I have exams coming up and I'm not sure if I have prepared enough. What should I do?"
-response = generate_response(user_input)
-print(response)
+# user_input = "I have exams coming up and I'm not sure if I have prepared enough. What should I do?"
+# response = generate_response(user_input, user_id="12345")
+# print(response)
